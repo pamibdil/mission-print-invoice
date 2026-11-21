@@ -2,11 +2,10 @@ const express = require('express');
 const path = require('path');
 const fs = require('fs');
 const { PDFDocument, StandardFonts, rgb } = require('pdf-lib');
-const db = require('./db');
+const { db, initDb } = require('./db');
 const config = require('./config');
 
 const app = express();
-// PORT disesuaikan untuk lokal & online (hosting)
 const PORT = process.env.PORT || 3000;
 
 app.use(express.json({ limit: '5mb' }));
@@ -34,7 +33,7 @@ function terbilangRupiah(n) {
 }
 
 // ===== API SIMPAN INVOICE =====
-app.post('/api/invoices', (req, res) => {
+app.post('/api/invoices', async (req, res) => {
   const { number, date, items } = req.body;
   if (!number || !date || !Array.isArray(items) || items.length === 0) {
     return res.status(400).json({ error: 'Data tidak lengkap' });
@@ -64,22 +63,20 @@ app.post('/api/invoices', (req, res) => {
 
   const terbilangText = terbilangRupiah(total);
 
-  const insertInv = db.prepare('INSERT INTO invoices (number, date, total, terbilang) VALUES (?, ?, ?, ?)');
-  const insertItem = db.prepare(
-    'INSERT INTO invoice_items (invoice_id, description, service_code, service_label, price, qty, subtotal) VALUES (?, ?, ?, ?, ?, ?, ?)'
-  );
-
-  const tx = db.transaction(() => {
-    const info = insertInv.run(number, date, total, terbilangText);
-    const invId = info.lastInsertRowid;
-    for (const it of cleanItems) {
-      insertItem.run(invId, it.description, it.service_code, it.service_label, it.price, it.qty, it.subtotal);
-    }
-    return invId;
-  });
-
   try {
-    const invId = tx();
+    const invResult = await db.execute({
+      sql: 'INSERT INTO invoices (number, date, total, terbilang) VALUES (?, ?, ?, ?)',
+      args: [number, date, total, terbilangText]
+    });
+    const invId = Number(invResult.lastInsertRowid);
+
+    for (const it of cleanItems) {
+      await db.execute({
+        sql: 'INSERT INTO invoice_items (invoice_id, description, service_code, service_label, price, qty, subtotal) VALUES (?, ?, ?, ?, ?, ?, ?)',
+        args: [invId, it.description, it.service_code, it.service_label, it.price, it.qty, it.subtotal]
+      });
+    }
+
     res.json({ id: invId, total, terbilang: terbilangText });
   } catch (e) {
     res.status(500).json({ error: e.message });
@@ -87,25 +84,42 @@ app.post('/api/invoices', (req, res) => {
 });
 
 // ===== API LIST =====
-app.get('/api/invoices', (req, res) => {
-  const rows = db.prepare('SELECT id, number, date, total, created_at FROM invoices ORDER BY id DESC').all();
-  res.json(rows);
+app.get('/api/invoices', async (req, res) => {
+  try {
+    const result = await db.execute('SELECT id, number, date, total, created_at FROM invoices ORDER BY id DESC');
+    res.json(result.rows);
+  } catch (e) {
+    res.status(500).json({ error: e.message });
+  }
 });
 
 // ===== API HAPUS =====
-app.delete('/api/invoices/:id', (req, res) => {
+app.delete('/api/invoices/:id', async (req, res) => {
   const id = parseInt(req.params.id);
-  db.prepare('DELETE FROM invoice_items WHERE invoice_id = ?').run(id);
-  db.prepare('DELETE FROM invoices WHERE id = ?').run(id);
-  res.json({ ok: true });
+  try {
+    await db.execute({ sql: 'DELETE FROM invoice_items WHERE invoice_id = ?', args: [id] });
+    await db.execute({ sql: 'DELETE FROM invoices WHERE id = ?', args: [id] });
+    res.json({ ok: true });
+  } catch (e) {
+    res.status(500).json({ error: e.message });
+  }
 });
 
 // ===== API PDF =====
 app.get('/api/invoices/:id/pdf', async (req, res) => {
   const id = parseInt(req.params.id);
-  const inv = db.prepare('SELECT * FROM invoices WHERE id = ?').get(id);
-  if (!inv) return res.status(404).send('Invoice tidak ditemukan');
-  const items = db.prepare('SELECT * FROM invoice_items WHERE invoice_id = ? ORDER BY id').all(id);
+  
+  let inv, items;
+  try {
+    const invResult = await db.execute({ sql: 'SELECT * FROM invoices WHERE id = ?', args: [id] });
+    inv = invResult.rows[0];
+    if (!inv) return res.status(404).send('Invoice tidak ditemukan');
+
+    const itemsResult = await db.execute({ sql: 'SELECT * FROM invoice_items WHERE invoice_id = ? ORDER BY id', args: [id] });
+    items = itemsResult.rows;
+  } catch (err) {
+    return res.status(500).send("Gagal mengambil data database");
+  }
 
   const pdfDoc = await PDFDocument.create();
   
@@ -135,7 +149,7 @@ app.get('/api/invoices/:id/pdf', async (req, res) => {
     } catch (e) {}
   }
 
-  // Header teks (UKURAN FONT SUDAH DITAMBAH 2)
+  // Header teks
   page.drawText(config.store.name, { x: headerX, y: y - 10, size: 12, font: fontBold });
   
   page.drawText('Lokasi:', { x: headerX, y: y - 21, size: 7.5, font: fontBold });
@@ -217,7 +231,7 @@ app.get('/api/invoices/:id/pdf', async (req, res) => {
   }
   if (line) page.drawText(line, { x: margin, y, size: 6.5, font });
 
-  // Footer (Bold & Ukuran dinaikkan)
+  // Footer
   page.drawText('Terima kasih atas kepercayaan Anda.', {
     x: margin, 
     y: margin + 6, 
@@ -238,16 +252,13 @@ app.get('/api/config', (req, res) => {
 });
 
 // ===== ROUTE UNTUK HALAMAN UTAMA =====
-// Ini wajib ditambahkan agar Vercel menampilkan index.html
 app.get('/', (req, res) => {
   res.sendFile(path.join(__dirname, 'public', 'index.html'));
 });
 
-// ===== START SERVER =====
-app.listen(PORT, () => {
-// ... (biarkan kode di bawahnya sama)
+// ===== INISIALISASI DATABASE & START SERVER =====
+initDb().catch(err => console.error("Gagal inisialisasi DB:", err));
 
-// ===== START SERVER =====
 app.listen(PORT, () => {
   console.log('========================================');
   console.log('  Mission Print Invoice');
