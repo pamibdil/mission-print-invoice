@@ -33,6 +33,34 @@ function terbilangRupiah(n) {
   return t.charAt(0).toUpperCase() + t.slice(1) + ' rupiah';
 }
 
+// Helper format tanggal YYYY-MM-DD -> DD-MM-YYYY
+function formatTanggalIndo(dateStr) {
+  if (!dateStr) return '-';
+  const parts = String(dateStr).split('-');
+  if (parts.length === 3 && parts[0].length === 4) {
+    return `${parts[2]}-${parts[1]}-${parts[0]}`;
+  }
+  return dateStr;
+}
+
+// Helper mencari file gambar di folder public / root
+function findAssetFile(regexPattern) {
+  const searchDirs = [
+    path.join(__dirname, 'public'),
+    __dirname,
+    path.join(process.cwd(), 'public'),
+    process.cwd()
+  ];
+  for (const dir of searchDirs) {
+    if (fs.existsSync(dir)) {
+      const files = fs.readdirSync(dir);
+      const found = files.find(f => regexPattern.test(f));
+      if (found) return path.join(dir, found);
+    }
+  }
+  return null;
+}
+
 // ===== API CONFIG =====
 app.get('/api/config', (req, res) => {
   try {
@@ -169,53 +197,40 @@ app.get('/api/invoices/:id/pdf', async (req, res) => {
 
     // ===== 2. LOGO PNG DI KANAN ATAS =====
     try {
-      const candidatePaths = [
-        path.join(__dirname, config.store.logoPath || 'public/logo.png'),
-        path.join(__dirname, 'public', 'logo.png'),
-        path.join(__dirname, 'logo.png'),
-        path.join(process.cwd(), 'public', 'logo.png'),
-        path.join(process.cwd(), 'logo.png')
-      ];
-      const logoFile = candidatePaths.find(p => fs.existsSync(p));
-
+      const logoFile = findAssetFile(/^logo\.png$/i);
       if (logoFile) {
         const logoBytes = fs.readFileSync(logoFile);
         const img = await pdfDoc.embedPng(logoBytes);
 
-        const logoH = 38;
+        const logoH = 44;
         const logoW = (img.width / img.height) * logoH;
         const posX = width - margin - logoW;
-        const posY = y - logoH;
+        const posY = y - logoH - 2;
 
         page.drawImage(img, { x: posX, y: posY, width: logoW, height: logoH });
-      } else {
-        console.warn('File logo.png tidak ditemukan di:', candidatePaths);
       }
     } catch (error) {
       console.error('Gagal memuat logo.png:', error);
     }
 
-    // ===== 3. HEADER TEKS =====
-    page.drawText(config.store.name, { x: margin, y: y - 10, size: 12, font: fontBold });
+    // ===== 3. HEADER TEKS KIRI (TANPA PENGULANGAN NAMA USAHA) =====
+    page.drawText('Lokasi:', { x: margin, y: y - 9, size: 7.5, font: fontBold });
+    page.drawText('Belakang Seblak Teh Windy,', { x: margin, y: y - 17, size: 7.5, font, color: rgb(0.25, 0.25, 0.25) });
+    page.drawText('Jl. HS. Ronggo Waluyo', { x: margin, y: y - 25, size: 7.5, font, color: rgb(0.25, 0.25, 0.25) });
 
-    page.drawText('Lokasi:', { x: margin, y: y - 21, size: 7.5, font: fontBold });
-    page.drawText('Belakang Seblak Teh Windy,', { x: margin, y: y - 29, size: 7.5, font, color: rgb(0.25, 0.25, 0.25) });
-    page.drawText('Jl. HS. Ronggo Waluyo', { x: margin, y: y - 37, size: 7.5, font, color: rgb(0.25, 0.25, 0.25) });
+    page.drawText('Telp:', { x: margin, y: y - 35, size: 7.5, font: fontBold });
+    page.drawText('0895371709332 / 0895331827838', { x: margin, y: y - 43, size: 7.5, font, color: rgb(0.25, 0.25, 0.25) });
 
-    page.drawText('Telp:', { x: margin, y: y - 45, size: 7.5, font: fontBold });
-    page.drawText('0895371709332', { x: margin, y: y - 53, size: 7.5, font, color: rgb(0.25, 0.25, 0.25) });
-    page.drawText('0895331827838', { x: margin, y: y - 61, size: 7.5, font, color: rgb(0.25, 0.25, 0.25) });
-
-    // Garis pemisah
-    y -= 68;
+    // Garis pemisah header
+    y -= 52;
     page.drawLine({ start: { x: margin, y }, end: { x: width - margin, y }, thickness: 1, color: rgb(0, 0, 0) });
 
-    // Judul & info
+    // Judul & info (Tanggal format DD-MM-YYYY)
     y -= 13;
     page.drawText('INVOICE', { x: margin, y, size: 10, font: fontBold });
-    page.drawText('No: ' + inv.number, { x: width - margin - 85, y, size: 7, font });
+    page.drawText('No: ' + inv.number, { x: width - margin - 88, y, size: 7, font });
     y -= 9;
-    page.drawText('Tanggal: ' + inv.date, { x: width - margin - 85, y, size: 7, font });
+    page.drawText('Tanggal: ' + formatTanggalIndo(inv.date), { x: width - margin - 88, y, size: 7, font });
 
     // Kolom tabel
     y -= 13;
@@ -263,13 +278,13 @@ app.get('/api/invoices/:id/pdf', async (req, res) => {
     page.drawText('Grand Total:', { x: colHarga, y, size: 8, font: fontBold });
     page.drawText('Rp ' + fmt(inv.total), { x: colSub - 8, y, size: 8, font: fontBold });
 
-    // Terbilang
+    // Terbilang (dibatasi lebarnya agar tidak menabrak QRIS di kanan bawah)
     y -= 14;
     page.drawText('Terbilang:', { x: margin, y, size: 6.5, font: fontBold });
     y -= 8;
     const words = inv.terbilang.split(' ');
     let line = '';
-    const maxW = width - margin * 2;
+    const maxW = width - margin * 2 - 75;
     for (const w of words) {
       const test = line ? line + ' ' + w : w;
       if (font.widthOfTextAtSize(test, 6.5) > maxW) {
@@ -282,7 +297,51 @@ app.get('/api/invoices/:id/pdf', async (req, res) => {
     }
     if (line) page.drawText(line, { x: margin, y, size: 6.5, font });
 
-    // Footer
+    // ===== 4. KANAN BAWAH: QRIS PEMBAYARAN (ATAU KOLOM TTD JIKA BELUM ADA QRIS) =====
+    let hasQris = false;
+    try {
+      const qrisFile = findAssetFile(/^qris\.png$/i);
+      if (qrisFile) {
+        const qrisBytes = fs.readFileSync(qrisFile);
+        const qrisImg = await pdfDoc.embedPng(qrisBytes);
+
+        const qrisSize = 46;
+        const qrisW = (qrisImg.width / qrisImg.height) * qrisSize;
+        const qrisX = width - margin - qrisW;
+        const qrisY = margin + 4;
+
+        page.drawText('Scan QRIS:', {
+          x: qrisX + (qrisW / 2) - 16,
+          y: qrisY + qrisSize + 3,
+          size: 6,
+          font: fontBold,
+          color: rgb(0.2, 0.2, 0.2)
+        });
+        page.drawImage(qrisImg, { x: qrisX, y: qrisY, width: qrisW, height: qrisSize });
+        hasQris = true;
+      }
+    } catch (error) {
+      console.error('Gagal memuat qris.png:', error);
+    }
+
+    if (!hasQris) {
+      page.drawText('Hormat Kami,', {
+        x: width - margin - 65,
+        y: margin + 36,
+        size: 6.5,
+        font,
+        color: rgb(0.25, 0.25, 0.25)
+      });
+      page.drawText('( Mission Print )', {
+        x: width - margin - 72,
+        y: margin + 6,
+        size: 6.5,
+        font: fontBold,
+        color: rgb(0.2, 0.2, 0.2)
+      });
+    }
+
+    // Footer Kiri Bawah
     page.drawText('Terima kasih atas kepercayaan Anda.', {
       x: margin,
       y: margin + 6,
