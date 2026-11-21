@@ -1,6 +1,7 @@
 const express = require('express');
 const path = require('path');
 const fs = require('fs');
+const https = require('https');
 const { PDFDocument, StandardFonts, rgb } = require('pdf-lib');
 const { db, initDb } = require('./db');
 const config = require('./config');
@@ -133,23 +134,49 @@ app.get('/api/invoices/:id/pdf', async (req, res) => {
   const margin = 12;
   let y = height - margin;
 
-  // Logo
-  const logoFile = path.join(__dirname, config.store.logoPath);
+  // ===== 1. WATERMARK DIAGONAL =====
+  page.drawText('MISSION PRINT', {
+    x: width / 2 - 150,
+    y: height / 2 - 20,
+    size: 50,
+    font: fontBold,
+    color: rgb(0.85, 0.85, 0.85), 
+    opacity: 0.3,                 
+    rotate: { type: 'degrees', angle: 45 },
+  });
+
+  // ===== 2. LOGO DARI URL (KANAN ATAS) =====
+  const logoUrl = 'https://invoice-mission-print.vercel.app/logo.png'; // Pastikan URL ini sesuai domain Vercel Anda
   let headerX = margin;
-  if (fs.existsSync(logoFile)) {
-    try {
-      const bytes = fs.readFileSync(logoFile);
-      const img = config.store.logoPath.toLowerCase().endsWith('.png')
-        ? await pdfDoc.embedPng(bytes)
-        : await pdfDoc.embedJpg(bytes);
-      const logoH = 26;
-      const logoW = (img.width / img.height) * logoH;
-      page.drawImage(img, { x: margin, y: y - logoH, width: logoW, height: logoH });
-      headerX = margin + logoW + 6;
-    } catch (e) {}
+  
+  try {
+    const getImageBuffer = (url) => {
+      return new Promise((resolve, reject) => {
+        https.get(url, (res) => {
+          const data = [];
+          res.on('data', (chunk) => data.push(chunk));
+          res.on('end', () => resolve(Buffer.concat(data)));
+        }).on('error', reject);
+      });
+    };
+
+    const logoBytes = await getImageBuffer(logoUrl);
+    const img = await pdfDoc.embedPng(logoBytes);
+    
+    const logoH = 30;
+    const logoW = (img.width / img.height) * logoH;
+    
+    // Posisi Kanan Atas
+    const posX = width - margin - logoW; 
+    const posY = y - logoH; 
+
+    page.drawImage(img, { x: posX, y: posY, width: logoW, height: logoH });
+    
+  } catch (error) {
+    console.error("Gagal mengunduh logo:", error);
   }
 
-  // Header teks
+  // ===== 3. HEADER TEKS =====
   page.drawText(config.store.name, { x: headerX, y: y - 10, size: 12, font: fontBold });
   
   page.drawText('Lokasi:', { x: headerX, y: y - 21, size: 7.5, font: fontBold });
