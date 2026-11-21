@@ -167,32 +167,44 @@ app.get('/api/invoices/:id/pdf', async (req, res) => {
       }
     }
 
-    // ===== 2. LOGO PNG DI KANAN ATAS =====
+    // ===== 2. LOGO DI KANAN ATAS (AUTO-DETECT FORMAT ASLI JPG / PNG) =====
     try {
-      const candidatePaths = [
-        path.join(__dirname, config.store.logoPath || 'public/logo.png'),
-        path.join(__dirname, 'public', 'logo.png'),
-        path.join(__dirname, 'logo.png'),
-        path.join(process.cwd(), 'public', 'logo.png'),
-        path.join(process.cwd(), 'logo.png')
+      const searchDirs = [
+        path.join(__dirname, 'public'),
+        __dirname,
+        path.join(process.cwd(), 'public'),
+        process.cwd()
       ];
-      const logoFile = candidatePaths.find(p => fs.existsSync(p));
+
+      let logoFile = null;
+      for (const dir of searchDirs) {
+        if (fs.existsSync(dir)) {
+          const files = fs.readdirSync(dir);
+          const found = files.find(f => /^logo\.(png|jpg|jpeg)$/i.test(f));
+          if (found) {
+            logoFile = path.join(dir, found);
+            break;
+          }
+        }
+      }
 
       if (logoFile) {
         const logoBytes = fs.readFileSync(logoFile);
-        const img = await pdfDoc.embedPng(logoBytes);
+        // Cek header asli file: JPEG selalu diawali 0xFF 0xD8, meskipun namanya .png
+        const isJpeg = logoBytes[0] === 0xFF && logoBytes[1] === 0xD8;
+        const img = isJpeg ? await pdfDoc.embedJpg(logoBytes) : await pdfDoc.embedPng(logoBytes);
 
-        const logoH = 35;
+        const logoH = 38;
         const logoW = (img.width / img.height) * logoH;
         const posX = width - margin - logoW;
         const posY = y - logoH;
 
         page.drawImage(img, { x: posX, y: posY, width: logoW, height: logoH });
       } else {
-        console.warn('File logo.png tidak ditemukan di:', candidatePaths);
+        console.warn('File logo tidak ditemukan di direktori manapun.');
       }
     } catch (error) {
-      console.error('Gagal memuat logo.png:', error);
+      console.error('Gagal memuat logo:', error);
     }
 
     // ===== 3. HEADER TEKS =====
