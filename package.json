@@ -1,0 +1,14 @@
+{
+  "name": "mission-print-invoice",
+  "version": "1.0.0",
+  "description": "Invoice generator Mission Print",
+  "main": "server.js",
+  "scripts": {
+    "start": "node server.js"
+  },
+  "dependencies": {
+    "express": "^4.19.2",
+    "better-sqlite3": "^13.0.3",
+    "pdf-lib": "^1.17.1"
+  }
+}
