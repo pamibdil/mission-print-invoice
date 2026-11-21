@@ -167,32 +167,20 @@ app.get('/api/invoices/:id/pdf', async (req, res) => {
       }
     }
 
-    // ===== 2. LOGO DI KANAN ATAS (AUTO-DETECT FORMAT ASLI JPG / PNG) =====
+    // ===== 2. LOGO PNG DI KANAN ATAS =====
     try {
-      const searchDirs = [
-        path.join(__dirname, 'public'),
-        __dirname,
-        path.join(process.cwd(), 'public'),
-        process.cwd()
+      const candidatePaths = [
+        path.join(__dirname, config.store.logoPath || 'public/logo.png'),
+        path.join(__dirname, 'public', 'logo.png'),
+        path.join(__dirname, 'logo.png'),
+        path.join(process.cwd(), 'public', 'logo.png'),
+        path.join(process.cwd(), 'logo.png')
       ];
-
-      let logoFile = null;
-      for (const dir of searchDirs) {
-        if (fs.existsSync(dir)) {
-          const files = fs.readdirSync(dir);
-          const found = files.find(f => /^logo\.(png|jpg|jpeg)$/i.test(f));
-          if (found) {
-            logoFile = path.join(dir, found);
-            break;
-          }
-        }
-      }
+      const logoFile = candidatePaths.find(p => fs.existsSync(p));
 
       if (logoFile) {
         const logoBytes = fs.readFileSync(logoFile);
-        // Cek header asli file: JPEG selalu diawali 0xFF 0xD8, meskipun namanya .png
-        const isJpeg = logoBytes[0] === 0xFF && logoBytes[1] === 0xD8;
-        const img = isJpeg ? await pdfDoc.embedJpg(logoBytes) : await pdfDoc.embedPng(logoBytes);
+        const img = await pdfDoc.embedPng(logoBytes);
 
         const logoH = 38;
         const logoW = (img.width / img.height) * logoH;
@@ -201,10 +189,10 @@ app.get('/api/invoices/:id/pdf', async (req, res) => {
 
         page.drawImage(img, { x: posX, y: posY, width: logoW, height: logoH });
       } else {
-        console.warn('File logo tidak ditemukan di direktori manapun.');
+        console.warn('File logo.png tidak ditemukan di:', candidatePaths);
       }
     } catch (error) {
-      console.error('Gagal memuat logo:', error);
+      console.error('Gagal memuat logo.png:', error);
     }
 
     // ===== 3. HEADER TEKS =====
