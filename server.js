@@ -213,12 +213,12 @@ app.get('/api/invoices/:id/pdf', async (req, res) => {
       console.error('Gagal memuat logo.png:', error);
     }
 
-    // ===== 3. HEADER TEKS KIRI (TANPA PENGULANGAN NAMA USAHA) =====
+    // ===== 3. HEADER TEKS KIRI =====
     page.drawText('Lokasi:', { x: margin, y: y - 9, size: 7.5, font: fontBold });
     page.drawText('Belakang Seblak Teh Windy,', { x: margin, y: y - 17, size: 7.5, font, color: rgb(0.25, 0.25, 0.25) });
     page.drawText('Jl. HS. Ronggo Waluyo', { x: margin, y: y - 25, size: 7.5, font, color: rgb(0.25, 0.25, 0.25) });
 
-    page.drawText('Telp:', { x: margin, y: y - 35, size: 7.5, font: fontBold });
+    page.drawText('Hubungi:', { x: margin, y: y - 35, size: 7.5, font: fontBold });
     page.drawText('0895371709332 / 0895331827838', { x: margin, y: y - 43, size: 7.5, font, color: rgb(0.25, 0.25, 0.25) });
 
     // Garis pemisah header
