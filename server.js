@@ -237,6 +237,16 @@ app.get('/api/config', (req, res) => {
   res.json({ services: config.services, store: config.store });
 });
 
+// ===== ROUTE UNTUK HALAMAN UTAMA =====
+// Ini wajib ditambahkan agar Vercel menampilkan index.html
+app.get('/', (req, res) => {
+  res.sendFile(path.join(__dirname, 'public', 'index.html'));
+});
+
+// ===== START SERVER =====
+app.listen(PORT, () => {
+// ... (biarkan kode di bawahnya sama)
+
 // ===== START SERVER =====
 app.listen(PORT, () => {
   console.log('========================================');
