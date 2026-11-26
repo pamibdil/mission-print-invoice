@@ -56,6 +56,16 @@
   .actions-cell { display: flex; gap: 6px; }
   .empty { color: #94a3b8; font-style: italic; text-align: center; padding: 24px; }
   .hidden { display: none; }
+
+  /* Kartu Ringkasan Pemasukan di Tab Riwayat */
+  .income-summary {
+    display: flex; justify-content: space-between; align-items: center;
+    background: #eef2ff; border: 1px solid #c7d2fe; color: #1e1b4b;
+    padding: 16px 20px; border-radius: 8px; margin-bottom: 18px; flex-wrap: wrap; gap: 10px;
+  }
+  .income-summary .label { font-size: 14px; font-weight: 600; color: #4338ca; }
+  .income-summary .sub-label { font-size: 12px; color: #64748b; margin-top: 2px; }
+  .income-summary .amount { font-size: 22px; font-weight: 700; color: #1e1b4b; }
 </style>
 </head>
 <body>
@@ -72,7 +82,7 @@
     <h2>Buat Invoice Baru</h2>
     <div class="form-row">
       <label>Nomor Invoice
-        <input type="text" id="invoiceNumber" placeholder="INV-001">
+        <input type="text" id="invoiceNumber" placeholder="Cetak Ke-001">
       </label>
       <label>Tanggal
         <input type="date" id="invoiceDate">
@@ -112,6 +122,15 @@
   <!-- ===== TAB RIWAYAT ===== -->
   <main id="viewHistory" class="container hidden">
     <h2>Riwayat Invoice</h2>
+
+    <div class="income-summary">
+      <div>
+        <div class="label">Grand Total Pemasukan</div>
+        <div class="sub-label" id="totalTxCount">0 transaksi tersimpan</div>
+      </div>
+      <div class="amount" id="historyGrandTotal">Rp 0</div>
+    </div>
+
     <table>
       <thead>
         <tr>
@@ -128,8 +147,17 @@
 
 <script>
 // ========== UTIL ==========
-const fmt = (n) => 'Rp ' + n.toLocaleString('id-ID');
-const fmtNum = (n) => n.toLocaleString('id-ID');
+const fmt = (n) => 'Rp ' + Number(n || 0).toLocaleString('id-ID');
+const fmtNum = (n) => Number(n || 0).toLocaleString('id-ID');
+
+function formatTanggalIndo(dateStr) {
+  if (!dateStr) return '-';
+  const parts = String(dateStr).split('-');
+  if (parts.length === 3 && parts[0].length === 4) {
+    return `${parts[2]}-${parts[1]}-${parts[0]}`;
+  }
+  return dateStr;
+}
 
 function terbilang(n) {
   n = Math.floor(Math.abs(n));
@@ -289,14 +317,23 @@ async function loadHistory() {
   const rows = await res.json();
   const body = document.getElementById('historyBody');
   const empty = document.getElementById('emptyMsg');
+  const historyGrandTotal = document.getElementById('historyGrandTotal');
+  const totalTxCount = document.getElementById('totalTxCount');
+
   body.innerHTML = '';
+
+  // Hitung Grand Total Pemasukan dari seluruh riwayat
+  const totalPemasukan = rows.reduce((sum, r) => sum + (Number(r.total) || 0), 0);
+  historyGrandTotal.textContent = fmt(totalPemasukan);
+  totalTxCount.textContent = `${rows.length} transaksi tersimpan`;
+
   if (rows.length === 0) { empty.classList.remove('hidden'); return; }
   empty.classList.add('hidden');
   for (const r of rows) {
     const tr = document.createElement('tr');
     tr.innerHTML = `
       <td>${r.number}</td>
-      <td>${r.date}</td>
+      <td>${formatTanggalIndo(r.date)}</td>
       <td>${fmt(r.total)}</td>
       <td class="actions-cell">
         <a class="btn-download" href="/api/invoices/${r.id}/pdf">Download PDF</a>
