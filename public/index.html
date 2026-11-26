@@ -320,6 +320,9 @@ async function loadHistory() {
   const historyGrandTotal = document.getElementById('historyGrandTotal');
   const totalTxCount = document.getElementById('totalTxCount');
 
+  // Urutkan riwayat berdasarkan nomor (Cetak Ke-001, Cetak Ke-002, ..., Cetak Ke-011, dst.)
+  rows.sort((a, b) => String(a.number).localeCompare(String(b.number), 'id', { numeric: true }));
+
   body.innerHTML = '';
 
   // Hitung Grand Total Pemasukan dari seluruh riwayat
